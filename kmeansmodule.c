@@ -312,7 +312,7 @@ PyObject *vector_matrix_to_pylist(Vector *head_vector) {
     
 
     while (curr_vector != NULL) {
-        PyObject *vec = PyList_New(0);
+        vec = PyList_New(0);
         curr_coordinate = curr_vector->coordinates;
 
         while (curr_coordinate != NULL) {

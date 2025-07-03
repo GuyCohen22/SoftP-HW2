@@ -1,6 +1,6 @@
 import sys
 import numpy as np
-# from mykmeanssp import fit
+from mykmeanspp import fit
 DEFAULT_ITER = 300
 DEFAULT_ERROR_MESSAGE = "An Error Has Occurred"
 CLUSTERS_ERROR_MESSAGE = "Invalid number of clusters!"
@@ -28,9 +28,9 @@ def validate_args(args):
         exit_with_error(CLUSTERS_ERROR_MESSAGE)
 
     # Validate iter is a natural number
-    if len(args) == 2:
+    if len(args) == 6:
         try:
-            iter_float = float(args[1])
+            iter_float = float(args[2])
             if not iter_float.is_integer():
                 raise ValueError
             maximum_iteration = int(iter_float)
@@ -42,7 +42,7 @@ def validate_args(args):
         maximum_iteration = DEFAULT_ITER
         eps_idx = 2
 
-     # Validate 1 < iter < 1000
+    # Validate 1 < iter < 1000
     if not (1 < maximum_iteration < 1000):
         exit_with_error(ITER_ERROR_MESSAGE)
 
@@ -109,7 +109,7 @@ def main():
     data_points = read_and_merge_files(file_name_1, file_name_2)
 
     try:
-        if not data_points.shape[0] < k:
+        if data_points.shape[0] <= k:
             raise ValueError
     except ValueError:
         exit_with_error(CLUSTERS_ERROR_MESSAGE)

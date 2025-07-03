@@ -124,14 +124,14 @@ void zero_out_centroids(Vector *centroids, int k, int dimension) {
 }
 
 /* Returns 1 if the centroids have converged, 0 otherwise */
-int has_converged(Vector *prev_centroids, Vector *curr_centroids, int k) {
+int has_converged(Vector *prev_centroids, Vector *curr_centroids, int k, double eps) {
     Vector *local_prev_centroids = prev_centroids, *local_curr_centroids = curr_centroids;
     double curr_distance;
     int i;
 
      for (i = 0; i < k; i++) {
         curr_distance = calculate_euclidean_distance(local_prev_centroids, local_curr_centroids);
-        if (curr_distance >= EPSILON) return 0;
+        if (curr_distance >= eps) return 0;
         local_prev_centroids = local_prev_centroids->next;
         local_curr_centroids = local_curr_centroids->next;
     }
@@ -201,13 +201,11 @@ void update_curr_centroids(Vector *prev_centroids, Vector *curr_centroids, Vecto
 }
 
 /* Returns centroids calculated using the k-means algorithm */
-Vector *calculate_centroids_using_kmeans(int k, int maximum_iteration, int num_vectors, int dimension, Vector *datapoints, Vector *prev_centroids, Vector *curr_centroids, int *assignments, int*counts) {
+Vector *calculate_centroids_using_kmeans(int k, int maximum_iteration, int num_vectors, int dimension, Vector *datapoints, Vector *inital_centroids, Vector *curr_centroids, int *assignments, int*counts, double eps) {
 
-    Vector *temp_centroids, *local_prev_centroids = prev_centroids, *local_curr_centroids = curr_centroids, *point_to_assign;
+    Vector *temp_centroids, *prev_centroids = inital_centroids, *local_curr_centroids = curr_centroids, *point_to_assign;
     int converged_flag = 0, iteration_cnt = 0;
     int i;
-
-    init_centroids_as_first_k_datapoints(datapoints, local_prev_centroids, k, dimension);
 
     while (iteration_cnt < maximum_iteration && !converged_flag) {
         memset(assignments, 0, sizeof(int) * num_vectors);
@@ -217,28 +215,160 @@ Vector *calculate_centroids_using_kmeans(int k, int maximum_iteration, int num_v
 
         /* Assign each datapoint to the closest cluster */
         for (i = 0; i < num_vectors; i++) {
-            assignments[i] = assign_datapoint_to_closest_cluster(point_to_assign, local_prev_centroids, k);
+            assignments[i] = assign_datapoint_to_closest_cluster(point_to_assign, prev_centroids, k);
             counts[assignments[i]]++;
             point_to_assign = point_to_assign->next;
         }
 
         /* Calculate new centroids */
-        update_curr_centroids(local_prev_centroids, local_curr_centroids, datapoints, assignments, counts, k, num_vectors, dimension);
-        converged_flag = has_converged(local_prev_centroids, local_curr_centroids, k);
+        update_curr_centroids(prev_centroids, local_curr_centroids, datapoints, assignments, counts, k, num_vectors, dimension);
+        converged_flag = has_converged(prev_centroids, local_curr_centroids, k, eps);
         iteration_cnt++;
         if (!converged_flag) {
             /* Swap the previous and current centroids for the next iteration */
-            temp_centroids = local_prev_centroids;
-            local_prev_centroids = local_curr_centroids;
+            temp_centroids = prev_centroids;
+            prev_centroids = local_curr_centroids;
             local_curr_centroids = temp_centroids;
         }
     }
     
-    return converged_flag ? local_curr_centroids : local_prev_centroids;
+    return converged_flag ? local_curr_centroids : prev_centroids;
 }
 
-void PyObject *fit(PyObject *self, PyObject *args) {
+/* Converts a Python list of lists into a linked list matrix of Vectors */
+Vector *pylist_to_vector_matrix(PyObject *data_points) {
+    Vector *head_vector = NULL, *curr_vector = NULL;
+    Coordinate *head_coordinate = NULL, *curr_coordinate = NULL;
+    int num_vectors, dimension, i, j;
+    PyObject *vec, *value;
 
+    num_vectors = PyList_Size(data_points);
+
+    for (i = 0; i < num_vectors; i++) {
+        vec = PyList_GetItem(data_points, i);
+
+        head_coordinate = calloc(1, sizeof(Coordinate));
+        if (head_coordinate == NULL) {
+            PyErr_NoMemory();
+            free_matrix(head_vector);
+            return NULL;
+        }
+        curr_coordinate = head_coordinate;
+
+        dimension = PyList_Size(vec);
+
+        for (j = 0; j < dimension; j++) {
+            value = PyList_GetItem(vec, j);
+
+            curr_coordinate->value = PyFloat_AsDouble(value);
+
+            if (j < dimension - 1) {
+                curr_coordinate->next = calloc(1, sizeof(Coordinate));
+                if (curr_coordinate->next == NULL) {
+                    PyErr_NoMemory();
+                    free_curr_coordinates(head_coordinate);
+                    free_matrix(head_vector);
+                    return NULL;
+                }
+                curr_coordinate = curr_coordinate->next;
+            }
+        }
+
+        if (head_vector == NULL) {
+            head_vector = calloc(1, sizeof(Vector));
+            if (head_vector == NULL) {
+                PyErr_NoMemory();
+                free_curr_coordinates(head_coordinate);
+                free_matrix(head_vector);
+                return NULL;
+            }
+
+            head_vector->coordinates = head_coordinate;
+            curr_vector = head_vector;
+        } 
+        
+        else {
+            curr_vector->next = calloc(1, sizeof(Vector));
+            if (curr_vector->next == NULL) {
+                    PyErr_NoMemory();
+                    free_curr_coordinates(head_coordinate);
+                    free_matrix(head_vector);
+                    return NULL;
+                }
+                curr_vector = curr_vector->next;
+                curr_vector->coordinates = head_coordinate;
+        }
+    }
+    return head_vector;
+}
+
+/* Converts a linked list matrix of Vectors into a Python list of lists */
+PyObject *vector_matrix_to_pylist(Vector *head_vector) {
+    PyObject *pylist_data_points = PyList_New(0);
+    PyObject *vec;
+    PyObject *val;
+    Vector *curr_vector = head_vector;
+    Coordinate *curr_coordinate;
+    
+
+    while (curr_vector != NULL) {
+        PyObject *vec = PyList_New(0);
+        curr_coordinate = curr_vector->coordinates;
+
+        while (curr_coordinate != NULL) {
+            val = PyFloat_FromDouble(curr_coordinate->value);
+            PyList_Append(vec, val);
+            curr_coordinate = curr_coordinate->next;
+        }
+
+        PyList_Append(pylist_data_points, vec);
+        curr_vector = curr_vector->next;
+    }
+
+    return pylist_data_points;
+}
+
+/* Parses Python arguments, runs the K-means++ algorithm, and returns final centroids as a Python list */
+static PyObject *fit(PyObject *self, PyObject *args) {
+    int k, maximum_iteration;
+    int num_vectors, dimension;
+    double eps;
+    Vector *datapoints, *inital_centroids, *curr_centroids, *result_centroids;
+    int *assignments, *counts;
+    PyObject *data_points_object, *inital_centroids_object, *py_result;
+
+    if (!PyArg_ParseTuple(args, "iidOO", &k, &maximum_iteration, &eps, &data_points_object, &inital_centroids_object)) {
+        return NULL;
+    }
+
+    num_vectors = PyList_Size(data_points_object);
+    dimension = PyList_Size(PyList_GetItem(data_points_object, 0));
+    datapoints = pylist_to_vector_matrix(data_points_object);
+    inital_centroids = pylist_to_vector_matrix(inital_centroids_object);
+
+    curr_centroids = init_centroids_matrix(k, dimension);
+    assignments = calloc(num_vectors, sizeof(int));
+    counts = calloc(k, sizeof(int));
+    if (inital_centroids == NULL || curr_centroids == NULL || assignments == NULL || counts == NULL) {
+        PyErr_NoMemory();
+        free_matrix(datapoints);
+        free_matrix(inital_centroids);
+        free_matrix(curr_centroids);
+        free(assignments);
+        free(counts);
+        return NULL;
+    }
+
+    result_centroids = calculate_centroids_using_kmeans(k, maximum_iteration, num_vectors, dimension, datapoints, inital_centroids, curr_centroids, assignments, counts, eps);
+    py_result = vector_matrix_to_pylist(result_centroids);
+
+    free_matrix(datapoints);
+    free_matrix(inital_centroids);
+    free_matrix(curr_centroids);
+    free(assignments);
+    free(counts);
+
+    return py_result;
 }
 
 static PyMethodDef kmeansppMethods[] = {

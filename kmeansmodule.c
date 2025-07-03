@@ -236,3 +236,41 @@ Vector *calculate_centroids_using_kmeans(int k, int maximum_iteration, int num_v
     
     return converged_flag ? local_curr_centroids : local_prev_centroids;
 }
+
+void PyObject *fit(PyObject *self, PyObject *args) {
+
+}
+
+static PyMethodDef kmeansppMethods[] = {
+    {"fit",
+    (PyCFunction) fit,
+    METH_VARARGS,
+    PyDoc_STR("fit(k, max_iter, epsilon, data_points, initial_centroids) -> centroids\n\n"
+               "Runs the K-means++ clustering algorithm.\n\n"
+               "Parameters:\n"
+               "  k (int): Number of required clusters. Must satisfy 1 < k < N, where N is the number of data points.\n"
+               "  max_iter (int): Optional. Maximum number of iterations. Must satisfy 1 < max_iter < 1000. Default is 300.\n"
+               "  epsilon (float): Convergence threshold. Must be epsilon >= 0.\n"
+               "  data_points (list of list of floats): N data points of dimension d.\n"
+               "  initial_centroids (list of list of floats): List of k initial centroids.\n\n"
+               "Returns:\n"
+               "  list of list of floats: Final k centroids after convergence or reaching max_iter.")},
+               {NULL, NULL, 0, NULL}
+};
+
+static struct PyModuleDef mykmeansppmodule = {
+    PyModuleDef_HEAD_INIT,
+    "mykmeanspp",     
+    "C extension module for running the K-means++ clustering algorithm.",  
+    -1,               
+    kmeansppMethods   
+};
+
+PyMODINIT_FUNC PyInit_mykmeanspp(void) {
+    PyObject *m;
+    m = PyModule_Create(&mykmeansppmodule);
+    if (!m) {
+        return NULL;
+    }
+    return m;
+}
